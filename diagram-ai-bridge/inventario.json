@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "nombre": "Pan",
+    "precio": 1.5,
+    "stock": 70
+  },
+  {
+    "id": 2,
+    "nombre": "Leche",
+    "precio": 2.0,
+    "stock": 85
+  },
+  {
+    "id": 3,
+    "nombre": "Huevos",
+    "precio": 3.5,
+    "stock": 68
+  },
+  {
+    "id": 4,
+    "nombre": "Queso",
+    "precio": 5.0,
+    "stock": 86
+  },
+  {
+    "id": 5,
+    "nombre": "Jamon",
+    "precio": 8.0,
+    "stock": 93
+  },
+  {
+    "id": 6,
+    "nombre": "Jugo",
+    "precio": 2.5,
+    "stock": 81
+  },
+  {
+    "id": 7,
+    "nombre": "Galletas",
+    "precio": 1.8,
+    "stock": 58
+  },
+  {
+    "id": 8,
+    "nombre": "Cafe",
+    "precio": 4.0,
+    "stock": 92
+  }
+]
