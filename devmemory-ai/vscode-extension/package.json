@@ -1,0 +1,42 @@
+{
+  "name": "devmemory-ai",
+  "displayName": "DevMemory AI",
+  "description": "Sistema de memoria para asistentes de IA",
+  "version": "1.0.0",
+  "publisher": "devmemory",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:devmemory.save",
+    "onCommand:devmemory.search",
+    "onCommand:devmemory.ask"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "devmemory.save",
+        "title": "DevMemory: Guardar Contexto"
+      },
+      {
+        "command": "devmemory.search",
+        "title": "DevMemory: Buscar Memoria"
+      },
+      {
+        "command": "devmemory.ask",
+        "title": "DevMemory: Preguntar a IA"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "devmemory.save",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m"
+      }
+    ]
+  },
+  "main": "./extension.js"
+}

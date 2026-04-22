@@ -60,8 +60,8 @@ devmemory-ai/
 
 - [x] Día 1-3: Backend funcional con SQLite
 - [x] Día 4: Búsqueda mejorada con pseudo-IA
-- [ ] Día 5: Integración con OpenAI/Claude API
-- [ ] Día 6: Extensión de VS Code
+- [x] Día 5: Integración con OpenAI/Claude API
+- [x] Día 6: Extensión de VS Code
 - [ ] Día 7: Pulido y documentación
 
 ## Progreso
@@ -80,3 +80,8 @@ devmemory-ai/
 - Endpoint POST /ai/ask
 - Busca contexto en memorias
 - Requiere OPENAI_API_KEY en .env (configuración de ejemplo en .env.example)
+
+### Día 6: Extensión VS Code ✅
+- Carpeta vscode-extension/
+- Comandos: guardar, buscar, preguntar
+- Atajo: Ctrl+Shift+M
