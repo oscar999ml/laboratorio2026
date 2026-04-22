@@ -1,0 +1,18 @@
+{
+  "name": "devmemory-ai",
+  "version": "1.0.0",
+  "description": "Sistema de memoria persistente para asistentes de IA basado en RAG",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["ai", "memory", "rag", "context"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.6"
+  }
+}
