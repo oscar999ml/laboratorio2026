@@ -3,3 +3,13 @@ dist/
 .env
 *.log
 .DS_Store
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.wav
+*.mp3
+*.o
+*.exe
