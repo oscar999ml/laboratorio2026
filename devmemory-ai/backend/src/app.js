@@ -3,6 +3,8 @@ const cors = require("cors");
 
 const memoryRoutes = require("./routes/memoryRoutes");
 const aiRoutes = require("./routes/aiRoutes");
+const projectRoutes = require("./routes/projectRoutes");
+const documentRoutes = require("./routes/documentRoutes");
 
 const app = express();
 
@@ -24,6 +26,8 @@ app.get("/health", (req, res) => {
 
 app.use("/memory", memoryRoutes);
 app.use("/ai", aiRoutes);
+app.use("/projects", projectRoutes);
+app.use("/documents", documentRoutes);
 
 app.use((err, req, res, next) => {
   console.error(`[ERROR] ${err.message}`);

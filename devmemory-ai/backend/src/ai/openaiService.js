@@ -1,65 +1,47 @@
 require("dotenv").config();
 const model = require("../models/memoryModel");
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "mistral";
 
 async function askWithContext(question) {
-  const memories = await model.searchMemory(question);
-  
-  if (!OPENAI_API_KEY) {
-    return {
-      question,
-      context: memories,
-      warning: "API key no configurada. Agrega OPENAI_API_KEY en .env",
-      respuesta: "Configure OPENAI_API_KEY para obtener respuesta de IA"
-    };
-  }
-
-  const context = memories.map(m => `- [${m.type}] ${m.content}`).join("\n");
-
-  const prompt = `Eres un asistente de IA especializado en desarrollo de software.
-Tienes acceso a una base de conocimientos con memorias previas del proyecto.
+  try {
+    const memories = await model.searchMemory(question);
+    
+    const context = memories.map(m => `[${m.type}] ${m.content}`).join("\n\n");
+    
+    const prompt = `Eres un asistente de IA especializado en desarrollo de software.
+Tienes acceso a una base de conocimientos con memorias del proyecto.
 
 Contexto:
 ${context}
 
 Pregunta: ${question}
 
-Responde de manera útil basada en el contexto. Si no hay información relevante, indica que no tienes esa información.`;
+Responde de manera útil basada en el contexto. Si no hay información relevante, responde indicando que no tienes esa información.`;
 
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${OPENAI_API_KEY}`
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: OLLAMA_MODEL,
         messages: [{ role: "user", content: prompt }],
-        temperature: 0.7
+        stream: false
       })
     });
 
     const data = await response.json();
     
-    if (data.error) {
-      return {
-        question,
-        context: memories,
-        respuesta: `Error: ${data.error.message}`
-      };
-    }
-    
     return {
       question,
       context: memories,
-      respuesta: data.choices?.[0]?.message?.content || "Sin respuesta"
+      respuesta: data.message?.content || data.response || "Sin respuesta",
+      model: OLLAMA_MODEL
     };
   } catch (err) {
     return {
       question,
-      context: memories,
+      context: [],
       respuesta: `Error: ${err.message}`
     };
   }

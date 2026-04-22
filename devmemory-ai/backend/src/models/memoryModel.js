@@ -1,92 +1,68 @@
-const db = require("../config/db");
+const { dbRun, dbAll } = require("../config/dbUtils");
+const { scoreResults } = require("../utils/scorer");
+const constants = require("../config/constants");
 
-const saveMemory = (content, type) => {
-  return new Promise((resolve, reject) => {
-    db.run(
-      "INSERT INTO memories (content, type) VALUES (?, ?)",
-      [content, type],
-      function (err) {
-        if (err) reject(err);
-        else resolve({ id: this.lastID, content, type });
-      }
-    );
-  });
+/**
+ * Guardar una memoria en BD
+ */
+const saveMemory = async (content, type) => {
+  const result = await dbRun(
+    "INSERT INTO memories (content, type) VALUES (?, ?)",
+    [content, type]
+  );
+  return { id: result.id, content, type };
 };
 
-const searchMemory = (query, type = null) => {
-  return new Promise((resolve, reject) => {
-    let sql = "SELECT * FROM memories";
-    const params = [];
-    const conditions = [];
+/**
+ * Buscar memorias por query con scoring
+ */
+const searchMemory = async (query, type = null, limit = constants.SEARCH_LIMIT_DEFAULT, offset = constants.SEARCH_OFFSET_DEFAULT) => {
+  let sql = "SELECT * FROM memories";
+  const params = [];
+  const conditions = [];
 
-    if (query) {
-      const keywords = query.toLowerCase().split(/\s+/).filter(k => k.length > 0);
-      keywords.forEach(keyword => {
-        conditions.push("LOWER(content) LIKE ?");
-        params.push(`%${keyword}%`);
-      });
-    }
-
-    if (type) {
-      conditions.push("type = ?");
-      params.push(type);
-    }
-
-    if (conditions.length > 0) {
-      sql += " WHERE " + conditions.join(" AND ");
-    }
-
-    sql += " ORDER BY created_at DESC LIMIT 10";
-
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else {
-        const scored = rows.map(row => {
-          let score = 0;
-          const qLower = query.toLowerCase();
-          const contentLower = row.content.toLowerCase();
-          
-          if (contentLower === qLower) score += 100;
-          else if (contentLower.includes(qLower)) score += 50;
-          
-          const keywords = qLower.split(/\s+/);
-          keywords.forEach(kw => {
-            if (contentLower.includes(kw)) score += 10;
-          });
-          
-          return { ...row, score };
-        });
-        
-        scored.sort((a, b) => b.score - a.score);
-        resolve(scored);
-      }
+  if (query && query.length >= constants.QUERY_MIN_LENGTH) {
+    const keywords = query.toLowerCase().split(/\s+/).filter(k => k.length > 0);
+    keywords.forEach(keyword => {
+      conditions.push("LOWER(content) LIKE ?");
+      params.push(`%${keyword}%`);
     });
-  });
+  }
+
+  if (type) {
+    conditions.push("type = ?");
+    params.push(type);
+  }
+
+  if (conditions.length > 0) {
+    sql += " WHERE " + conditions.join(" AND ");
+  }
+
+  sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+  params.push(limit, offset);
+
+  const rows = await dbAll(sql, params);
+  return scoreResults(rows, query);
 };
 
-const getMemoriesByType = (type) => {
-  return new Promise((resolve, reject) => {
-    db.all(
-      "SELECT * FROM memories WHERE type = ? ORDER BY created_at DESC",
-      [type],
-      (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      }
-    );
-  });
+/**
+ * Obtener memorias por tipo
+ */
+const getMemoriesByType = async (type, limit = constants.SEARCH_LIMIT_DEFAULT, offset = constants.SEARCH_OFFSET_DEFAULT) => {
+  return await dbAll(
+    "SELECT * FROM memories WHERE type = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+    [type, limit, offset]
+  );
 };
 
-const getAllMemories = () => {
-  return new Promise((resolve, reject) => {
-    db.all(
-      "SELECT * FROM memories ORDER BY created_at DESC",
-      (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      }
-    );
-  });
+/**
+ * Obtener todas las memorias
+ */
+const getAllMemories = async (limit = constants.SEARCH_LIMIT_DEFAULT, offset = constants.SEARCH_OFFSET_DEFAULT) => {
+  return await dbAll(
+    "SELECT * FROM memories ORDER BY created_at DESC LIMIT ? OFFSET ?",
+    [limit, offset]
+  );
 };
 
 module.exports = { saveMemory, searchMemory, getMemoriesByType, getAllMemories };

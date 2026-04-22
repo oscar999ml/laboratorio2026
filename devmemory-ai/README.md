@@ -7,9 +7,10 @@ Sistema de memoria persistente para asistentes de IA basado en RAG (Retrieval Au
 - Backend modular con Express.js
 - Base de datos SQLite para persistencia
 - Sistema de memoria con categorización (bug, decision, feature)
-- Búsqueda por palabras clave
-- Listo para integración con IA (OpenAI/Claude)
-- Extensión VS Code (en desarrollo)
+- Búsqueda por palabras clave con scoring
+- IA local con Ollama (mistral)
+- Extensión VS Code
+- Interfaz UI web
 
 ## Instalación
 
@@ -108,17 +109,58 @@ devmemory-ai/
 ### Tipos de memoria
 - `bug` - Errores y soluciones
 - `decision` - Decisiones de diseño
-- `feature` - features implementado
+- `feature` - Features implementado
 - `general` - Notas generales
+
+## Interfaz UI
+
+Abre en el navegador:
+```
+http://localhost:3000
+```
+
+O simplemente abre `frontend/index.html` en tu navegador.
+
+## Estructura final
+
+```
+devmemory-ai/
+├── backend/
+│   ├── src/
+│   │   ├── config/db.js
+│   │   ├── controllers/
+│   │   ├── routes/
+│   │   ├── services/
+│   │   ├── models/
+│   │   └── ai/openaiService.js
+│   ├── server.js
+│   └── .env
+├── frontend/
+│   └── index.html
+├── vscode-extension/
+│   ├── extension.js
+│   └── package.json
+└── README.md
+```
 
 ## Configuración
 
-```bash
-# Copiar archivo de ejemplo
-cp .env.example .env
+### Ollama (IA local)
 
-# Agregar tu API key de OpenAI
-# OPENAI_API_KEY=sk-...
+```bash
+# Asegúrate de tener Ollama instalado y corriendo
+# Descarga un modelo: ollama pull mistral
+
+# Configurar (opcional)
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=mistral
+```
+
+### OpenAI (opcional)
+
+```bash
+cp .env.example .env
+OPENAI_API_KEY=sk-...
 
 "error en login" 
 "error al cargar dashboard"

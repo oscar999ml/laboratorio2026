@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DevMemory AI</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1e1e1e; color: #fff; min-height: 100vh; }
+    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+    h1 { color: #4fc3f7; margin-bottom: 20px; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+    .tab { padding: 10px 20px; background: #2d2d2d; border: none; color: #fff; cursor: pointer; border-radius: 5px; }
+    .tab.active { background: #4fc3f7; color: #1e1e1e; }
+    .card { background: #2d2d2d; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+    input, textarea, select { width: 100%; padding: 12px; background: #1e1e1e; border: 1px solid #444; color: #fff; border-radius: 5px; margin-bottom: 10px; }
+    textarea { min-height: 100px; resize: vertical; }
+    button { padding: 12px 24px; background: #4fc3f7; border: none; color: #1e1e1e; cursor: pointer; border-radius: 5px; font-weight: bold; }
+    button:hover { background: #29b6f6; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    .memory { background: #1e1e1e; padding: 15px; border-radius: 5px; margin-bottom: 10px; border-left: 3px solid #4fc3f7; }
+    .memory.bug { border-left-color: #f44336; }
+    .memory.decision { border-left-color: #4caf50; }
+    .memory.feature { border-left-color: #ff9800; }
+    .memory-type { font-size: 12px; color: #888; text-transform: uppercase; }
+    .memory-content { margin: 5px 0; }
+    .response { background: #1e1e1e; padding: 15px; border-radius: 5px; white-space: pre-wrap; line-height: 1.6; }
+    .loading { color: #4fc3f7; }
+    .error { color: #f44336; }
+    .success { color: #4caf50; }
+    .empty { color: #888; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧠 DevMemory AI</h1>
+    
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('save')">Guardar</button>
+      <button class="tab" onclick="showTab('search')">Buscar</button>
+      <button class="tab" onclick="showTab('ask')">Preguntar IA</button>
+    </div>
+
+    <div id="save-tab">
+      <div class="card">
+        <h2>Guardar Memoria</h2>
+        <input type="text" id="save-content" placeholder="Describe el contexto, error o decisión..." />
+        <select id="save-type">
+          <option value="bug">🐛 Bug</option>
+          <option value="decision">📝 Decisión</option>
+          <option value="feature">✨ Feature</option>
+          <option value="general">📌 General</option>
+        </select>
+        <button onclick="saveMemory()">Guardar</button>
+        <p id="save-result"></p>
+      </div>
+    </div>
+
+    <div id="search-tab" style="display:none">
+      <div class="card">
+        <h2>Buscar Memorias</h2>
+        <input type="text" id="search-query" placeholder="Buscar..." onkeyup="searchMemories()" />
+        <div id="search-results"></div>
+      </div>
+    </div>
+
+    <div id="ask-tab" style="display:none">
+      <div class="card">
+        <h2>Preguntar a la IA</h2>
+        <input type="text" id="ask-question" placeholder="Tu pregunta..." onkeyup="askEnter(event)" />
+        <button onclick="askIA()" id="ask-btn">Preguntar</button>
+        <div id="ask-result"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = 'http://localhost:3000';
+    let currentTab = 'save';
+
+    function showTab(tab) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('[id$="-tab"]').forEach(t => t.style.display = 'none');
+      event.target.classList.add('active');
+      document.getElementById(tab + '-tab').style.display = 'block';
+      currentTab = tab;
+      if (tab === 'search') searchMemories();
+    }
+
+    async function saveMemory() {
+      const content = document.getElementById('save-content').value;
+      const type = document.getElementById('save-type').value;
+      const result = document.getElementById('save-result');
+      
+      if (!content) { result.innerHTML = '<span class="error">Escribe algo primero</span>'; return; }
+      
+      result.innerHTML = '<span class="loading">Guardando...</span>';
+      
+      try {
+        const res = await fetch(API + '/memory/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, type })
+        });
+        const data = await res.json();
+        result.innerHTML = `<span class="success">✅ Guardado (ID: ${data.id})</span>`;
+        document.getElementById('save-content').value = '';
+      } catch (err) {
+        result.innerHTML = `<span class="error">Error: ${err.message}</span>`;
+      }
+    }
+
+    async function searchMemories() {
+      const query = document.getElementById('search-query').value;
+      const results = document.getElementById('search-results');
+      
+      try {
+        const res = await fetch(API + '/memory/search?q=' + encodeURIComponent(query));
+        const data = await res.json();
+        
+        if (data.length === 0) {
+          results.innerHTML = '<p class="empty">No hay memorias</p>';
+          return;
+        }
+        
+        results.innerHTML = data.map(m => `
+          <div class="memory ${m.type}">
+            <span class="memory-type">${m.type}</span>
+            <p class="memory-content">${m.content}</p>
+          </div>
+        `).join('');
+      } catch (err) {
+        results.innerHTML = `<span class="error">Error: ${err.message}</span>`;
+      }
+    }
+
+    async function askIA() {
+      const question = document.getElementById('ask-question').value;
+      const result = document.getElementById('ask-result');
+      const btn = document.getElementById('ask-btn');
+      
+      if (!question) { result.innerHTML = '<span class="error">Escribe una pregunta</span>'; return; }
+      
+      btn.disabled = true;
+      result.innerHTML = '<span class="loading">Consultando IA... (puede tomar unos segundos)</span>';
+      
+      try {
+        const res = await fetch(API + '/ai/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question })
+        });
+        const data = await res.json();
+        result.innerHTML = `<div class="response">${data.respuesta}</div>`;
+      } catch (err) {
+        result.innerHTML = `<span class="error">Error: ${err.message}</span>`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function askEnter(e) {
+      if (e.key === 'Enter') askIA();
+    }
+  </script>
+</body>
+</html>
