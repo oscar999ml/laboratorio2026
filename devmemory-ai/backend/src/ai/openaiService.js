@@ -1,3 +1,4 @@
+require("dotenv").config();
 const model = require("../models/memoryModel");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
@@ -26,25 +27,42 @@ Pregunta: ${question}
 
 Responde de manera útil basada en el contexto. Si no hay información relevante, indica que no tienes esa información.`;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.7
-    })
-  });
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7
+      })
+    });
 
-  const data = await response.json();
-  return {
-    question,
-    context: memories,
-    respuesta: data.choices?.[0]?.message?.content || "Sin respuesta"
-  };
+    const data = await response.json();
+    
+    if (data.error) {
+      return {
+        question,
+        context: memories,
+        respuesta: `Error: ${data.error.message}`
+      };
+    }
+    
+    return {
+      question,
+      context: memories,
+      respuesta: data.choices?.[0]?.message?.content || "Sin respuesta"
+    };
+  } catch (err) {
+    return {
+      question,
+      context: memories,
+      respuesta: `Error: ${err.message}`
+    };
+  }
 }
 
 module.exports = { askWithContext };

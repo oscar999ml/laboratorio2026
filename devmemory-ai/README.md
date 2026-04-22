@@ -62,7 +62,7 @@ devmemory-ai/
 - [x] Día 4: Búsqueda mejorada con pseudo-IA
 - [x] Día 5: Integración con OpenAI/Claude API
 - [x] Día 6: Extensión de VS Code
-- [ ] Día 7: Pulido y documentación
+- [x] Día 7: Pulido y documentación ✅
 
 ## Progreso
 
@@ -85,3 +85,41 @@ devmemory-ai/
 - Carpeta vscode-extension/
 - Comandos: guardar, buscar, preguntar
 - Atajo: Ctrl+Shift+M
+
+### Día 7: Pulido ✅
+- Health check endpoint (/health)
+- Logs mejorados
+- Validación de tipos
+- Manejo de errores
+
+## API Reference
+
+### Endpoints
+
+| Método | Ruta | Descripción |
+|--------|------|------------|
+| GET | /health | Health check |
+| POST | /memory/save | Guardar memoria |
+| GET | /memory/search?q=... | Buscar memorias |
+| GET | /memory/type/:type | Filtrar por tipo |
+| GET | /memory/all | Todas las memorias |
+| POST | /ai/ask | Preguntar a IA |
+
+### Tipos de memoria
+- `bug` - Errores y soluciones
+- `decision` - Decisiones de diseño
+- `feature` - features implementado
+- `general` - Notas generales
+
+## Configuración
+
+```bash
+# Copiar archivo de ejemplo
+cp .env.example .env
+
+# Agregar tu API key de OpenAI
+# OPENAI_API_KEY=sk-...
+
+"error en login" 
+"error al cargar dashboard"
+"decisión: usar React para frontend"

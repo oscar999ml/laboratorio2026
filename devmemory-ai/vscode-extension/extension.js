@@ -98,11 +98,7 @@ async function searchMemory() {
     });
     
     if (selected) {
-      const doc = await vscode.workspace.openDocument({
-        content: selected.content,
-        language: 'markdown'
-      });
-      vscode.window.showTextDocument(doc);
+      vscode.window.showInformationMessage(selected.content);
     }
   } catch (err) {
     vscode.window.showErrorMessage('Error: ' + err.message);
@@ -122,11 +118,7 @@ async function askAI() {
     const result = await post('/ai/ask', { question });
     const data = JSON.parse(result);
     
-    const doc = await vscode.workspace.openDocument({
-      content: `# Pregunta\n${question}\n\n# Respuesta\n${data.respuesta}\n\n# Contexto\n${JSON.stringify(data.context, null, 2)}`,
-      language: 'markdown'
-    });
-    vscode.window.showTextDocument(doc);
+    vscode.window.showInformationMessage(`IA: ${data.respuesta}`);
   } catch (err) {
     vscode.window.showErrorMessage('Error: ' + err.message);
   }
