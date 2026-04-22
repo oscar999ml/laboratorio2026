@@ -1,63 +1,45 @@
 const http = require('http');
 
-const memories = [
-  { content: "error en login", type: "bug" },
-  { content: "usar Node.js 18", type: "decision" },
-  { content: "implementar auth con JWT", type: "feature" },
-  { content: "error CORS en producción", type: "bug" },
-  { content: "usar PostgreSQL para producción", type: "decision" }
-];
-
-let index = 0;
-
-function saveMemory(mem) {
+function post(endpoint, data) {
   return new Promise((resolve, reject) => {
-    const data = JSON.stringify(mem);
+    const body = JSON.stringify(data);
     const options = {
       hostname: 'localhost',
       port: 3000,
-      path: '/memory/save',
+      path: endpoint,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Content-Length': data.length
+        'Content-Length': Buffer.byteLength(body)
       }
     };
     
     const req = http.request(options, (res) => {
-      let body = '';
-      res.on('data', (chunk) => body += chunk);
-      res.on('end', () => resolve(body));
+      let result = '';
+      res.on('data', (chunk) => result += chunk);
+      res.on('end', () => resolve(result));
     });
     
     req.on('error', reject);
-    req.write(data);
+    req.write(body);
     req.end();
   });
 }
 
-async function test() {
-  console.log('=== GUARDANDO MEMORIAS ===');
-  for (const mem of memories) {
-    const result = await saveMemory(mem);
-    console.log('Guardado:', result);
-  }
-  
-  console.log('\n=== BUSCANDO "error" ===');
-  const searchReq = http.get('http://localhost:3000/memory/search?q=error', (res) => {
-    let body = '';
-    res.on('data', (chunk) => body += chunk);
-    res.on('end', () => console.log(body));
+function get(url) {
+  return new Promise((resolve, reject) => {
+    http.get(`http://localhost:3000${url}`, (res) => {
+      let result = '';
+      res.on('data', (chunk) => result += chunk);
+      res.on('end', () => resolve(result));
+    }).on('error', reject);
   });
-  
-  setTimeout(() => {
-    console.log('\n=== BUSCANDO "login" ===');
-    const searchReq2 = http.get('http://localhost:3000/memory/search?q=login', (res) => {
-      let body = '';
-      res.on('data', (chunk) => body += chunk);
-      res.on('end', () => console.log(body));
-    });
-  }, 500);
+}
+
+async function test() {
+  console.log('=== TEST API /ai/ask ===');
+  const result = await post('/ai/ask', { question: 'cómo arreglo el error de login?' });
+  console.log(result);
 }
 
 test().catch(console.error);

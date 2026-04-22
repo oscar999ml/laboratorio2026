@@ -59,7 +59,24 @@ devmemory-ai/
 ## Roadmap
 
 - [x] Día 1-3: Backend funcional con SQLite
-- [ ] Día 4: Búsqueda mejorada con pseudo-IA
+- [x] Día 4: Búsqueda mejorada con pseudo-IA
 - [ ] Día 5: Integración con OpenAI/Claude API
 - [ ] Día 6: Extensión de VS Code
 - [ ] Día 7: Pulido y documentación
+
+## Progreso
+
+### Día 1-3: Backend ✅
+- Servidor Express.js corriendo en puerto 3000
+- Base de datos SQLite con tabla memories
+- Endpoints: POST /memory/save, GET /memory/search
+
+### Día 4: Pseudo-IA ✅
+- Búsqueda por palabras clave con scoring
+- Filtrado por tipo (bug, decision, feature)
+- Nuevos endpoints: /memory/type/:type, /memory/all
+
+### Día 5: IA ✅
+- Endpoint POST /ai/ask
+- Busca contexto en memorias
+- Requiere OPENAI_API_KEY en .env (configuración de ejemplo en .env.example)

@@ -7,11 +7,17 @@
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["ai", "memory", "rag", "context"],
+  "keywords": [
+    "ai",
+    "memory",
+    "rag",
+    "context"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^4.18.2",
     "sqlite3": "^5.1.6"
   }
