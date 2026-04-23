@@ -20,14 +20,14 @@ class MouthTracker:
         
         upper_lip_points = []
         for idx in self.UPPER_LIP_INDICES:
-            landmark = landmarks[idx]
+            landmark = landmarks.landmark[idx]
             x = int(landmark.x * w)
             y = int(landmark.y * h)
             upper_lip_points.append((x, y))
 
         lower_lip_points = []
         for idx in self.LOWER_LIP_INDICES:
-            landmark = landmarks[idx]
+            landmark = landmarks.landmark[idx]
             x = int(landmark.x * w)
             y = int(landmark.y * h)
             lower_lip_points.append((x, y))
@@ -60,13 +60,13 @@ class MouthTracker:
         annotated = frame.copy()
 
         for idx in self.UPPER_LIP_INDICES:
-            point = landmarks[idx]
+            point = landmarks.landmark[idx]
             x = int(point.x * w)
             y = int(point.y * h)
             cv2.circle(annotated, (x, y), 2, (255, 0, 0), -1)
 
         for idx in self.LOWER_LIP_INDICES:
-            point = landmarks[idx]
+            point = landmarks.landmark[idx]
             x = int(point.x * w)
             y = int(point.y * h)
             cv2.circle(annotated, (x, y), 2, (0, 0, 255), -1)

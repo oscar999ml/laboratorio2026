@@ -1,26 +1,36 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import cv2
 import time
 from datetime import datetime
 
-from vision.face_detector import FaceDetector
-from vision.eye_tracker import EyeTracker
-from vision.mouth_tracker import MouthTracker
-from vision.head_pose import HeadPoseDetector
-from logic.drowsiness_detector import DrowsinessDetector
-from alerts.alarm import AlarmSystem
-from gps.gps_reader import GPSReader
-from communication.api_client import APIClient
-from utils.logger import Logger
+from src.vision.face_detector import FaceDetector
+from src.vision.eye_tracker import EyeTracker
+from src.vision.mouth_tracker import MouthTracker
+from src.vision.head_pose import HeadPoseDetector
+from src.logic.drowsiness_detector import DrowsinessDetector
+from src.alerts.alarm import AlarmSystem
+from src.gps.gps_reader import GPSReader
+from src.communication.api_client import APIClient
+from src.utils.logger import Logger
 
 
 class DrowsinessSystem:
-    def __init__(self, camera_index=0, gps_enabled=False, api_enabled=False, 
+    def __init__(self, camera_index=0, video_path=None, stream_url=None, loop_video=False,
+                 gps_enabled=False, api_enabled=False,
                  ear_threshold=0.25, mar_threshold=0.6):
         self.camera_index = camera_index
+        self.video_path = video_path
+        self.stream_url = stream_url
+        self.loop_video = loop_video
         self.gps_enabled = gps_enabled
         self.api_enabled = api_enabled
-        
+        self.source_type = "unknown"
+
         self.logger = Logger()
+        self._log_source()
         self.logger.log_system_start(camera_index, gps_enabled)
         
         self.face_detector = FaceDetector()
@@ -50,23 +60,55 @@ class DrowsinessSystem:
             else:
                 self.logger.warning("No se pudo conectar a la API")
         
-        self.cap = cv2.VideoCapture(self.camera_index)
-        if not self.cap.isOpened():
-            self.logger.error("Camera", "No se pudo abrir la camara")
-        
         self.start_time = None
         self.frame_count = 0
         self.fps = 0
 
+    def _log_source(self):
+        if self.video_path:
+            self.source_type = "video"
+            if os.path.exists(self.video_path):
+                print(f"Fuente: Video ({self.video_path})")
+            else:
+                print(f"ERROR: Video no encontrado: {self.video_path}")
+        elif self.stream_url:
+            self.source_type = "stream"
+            print(f"Fuente: Stream ({self.stream_url})")
+        else:
+            self.source_type = "camera"
+            print(f"Fuente: Camara ({self.camera_index})")
+
+    def _init_capture(self):
+        if self.video_path and os.path.exists(self.video_path):
+            self.cap = cv2.VideoCapture(self.video_path)
+        elif self.stream_url:
+            self.cap = cv2.VideoCapture(self.stream_url)
+        else:
+            self.cap = cv2.VideoCapture(self.camera_index)
+
+        if not self.cap.isOpened():
+            self.logger.error(f"No se pudo abrir la fuente de entrada: {self.source_type}")
+            return False
+        return True
+
     def run(self):
+        if not self._init_capture():
+            return
+
         self.start_time = time.time()
         prev_time = time.time()
-        
+
         while True:
             ret, frame = self.cap.read()
             if not ret:
-                self.logger.error("Camera", "Error al leer frame")
-                break
+                if self.loop_video and self.source_type == "video":
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    ret, frame = self.cap.read()
+                    if not ret:
+                        break
+                else:
+                    self.logger.error("Error al leer frame o video terminado")
+                    break
             
             self.frame_count += 1
             current_time = time.time()
@@ -189,24 +231,30 @@ class DrowsinessSystem:
 
 def main():
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Sistema de Deteccion de Somnolencia")
     parser.add_argument("-c", "--camera", type=int, default=0, help="Indice de la camara (default: 0)")
+    parser.add_argument("-v", "--video", type=str, help="Ruta a archivo de video de prueba")
+    parser.add_argument("-s", "--stream", type=str, help="URL de stream (rtsp://, http://, etc)")
+    parser.add_argument("--loop", action="store_true", help="Repetir video en loop")
     parser.add_argument("--gps", action="store_true", help="Habilitar GPS")
     parser.add_argument("--api", action="store_true", help="Habilitar conexion a API")
     parser.add_argument("--ear", type=float, default=0.25, help="Umbral EAR (default: 0.25)")
     parser.add_argument("--mar", type=float, default=0.6, help="Umbral MAR (default: 0.6)")
-    
+
     args = parser.parse_args()
-    
+
     system = DrowsinessSystem(
         camera_index=args.camera,
+        video_path=args.video,
+        stream_url=args.stream,
+        loop_video=args.loop,
         gps_enabled=args.gps,
         api_enabled=args.api,
         ear_threshold=args.ear,
         mar_threshold=args.mar
     )
-    
+
     system.run()
 
 

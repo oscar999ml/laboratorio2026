@@ -40,14 +40,14 @@ class EyeTracker:
         
         left_eye_points = []
         for idx in self.LEFT_EYE_INDICES:
-            landmark = landmarks[idx]
+            landmark = landmarks.landmark[idx]
             x = int(landmark.x * w)
             y = int(landmark.y * h)
             left_eye_points.append((x, y))
 
         right_eye_points = []
         for idx in self.RIGHT_EYE_INDICES:
-            landmark = landmarks[idx]
+            landmark = landmarks.landmark[idx]
             x = int(landmark.x * w)
             y = int(landmark.y * h)
             right_eye_points.append((x, y))
@@ -89,13 +89,13 @@ class EyeTracker:
         annotated = frame.copy()
 
         for idx in self.LEFT_EYE_INDICES:
-            point = landmarks[idx]
+            point = landmarks.landmark[idx]
             x = int(point.x * w)
             y = int(point.y * h)
             cv2.circle(annotated, (x, y), 2, (0, 255, 0), -1)
 
         for idx in self.RIGHT_EYE_INDICES:
-            point = landmarks[idx]
+            point = landmarks.landmark[idx]
             x = int(point.x * w)
             y = int(point.y * h)
             cv2.circle(annotated, (x, y), 2, (0, 255, 0), -1)

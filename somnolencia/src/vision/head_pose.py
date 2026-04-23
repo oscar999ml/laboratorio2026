@@ -21,17 +21,17 @@ class HeadPoseDetector:
             [-0.5, 0.5, -1.0],
             [0.5, 0.5, -1.0],
             [0.0, 1.5, -2.0],
-        ], dtype=np.float64)
+        ], dtype=np.float32)
 
     def get_head_pose(self, landmarks, image_shape):
         h, w, _ = image_shape
         
-        nose_tip = np.array([landmarks[self.NOSE_TIP].x * w, landmarks[self.NOSE_TIP].y * h, 0])
-        left_eye_left = np.array([landmarks[self.LEFT_EYE_LEFT].x * w, landmarks[self.LEFT_EYE_LEFT].y * h, 0])
-        right_eye_right = np.array([landmarks[self.RIGHT_EYE_RIGHT].x * w, landmarks[self.RIGHT_EYE_RIGHT].y * h, 0])
-        left_ear = np.array([landmarks[self.LEFT_EAR].x * w, landmarks[self.LEFT_EAR].y * h, 0])
-        right_ear = np.array([landmarks[self.RIGHT_EAR].x * w, landmarks[self.RIGHT_EAR].y * h, 0])
-        chin = np.array([landmarks[self.CHIN].x * w, landmarks[self.CHIN].y * h, 0])
+        nose_tip = np.array([landmarks.landmark[self.NOSE_TIP].x * w, landmarks.landmark[self.NOSE_TIP].y * h])
+        left_eye_left = np.array([landmarks.landmark[self.LEFT_EYE_LEFT].x * w, landmarks.landmark[self.LEFT_EYE_LEFT].y * h])
+        right_eye_right = np.array([landmarks.landmark[self.RIGHT_EYE_RIGHT].x * w, landmarks.landmark[self.RIGHT_EYE_RIGHT].y * h])
+        left_ear = np.array([landmarks.landmark[self.LEFT_EAR].x * w, landmarks.landmark[self.LEFT_EAR].y * h])
+        right_ear = np.array([landmarks.landmark[self.RIGHT_EAR].x * w, landmarks.landmark[self.RIGHT_EAR].y * h])
+        chin = np.array([landmarks.landmark[self.CHIN].x * w, landmarks.landmark[self.CHIN].y * h])
 
         face_2d_model = np.array([
             nose_tip,
@@ -40,7 +40,7 @@ class HeadPoseDetector:
             left_ear,
             right_ear,
             chin,
-        ], dtype=np.float64)
+        ], dtype=np.float32)
 
         focal_length = w
         center = (w / 2, h / 2)
@@ -48,9 +48,9 @@ class HeadPoseDetector:
             [focal_length, 0, center[0]],
             [0, focal_length, center[1]],
             [0, 0, 1]
-        ], dtype=np.float64)
+        ], dtype=np.float32)
 
-        dist_coeffs = np.zeros((4, 1), dtype=np.float64)
+        dist_coeffs = np.zeros((4, 1), dtype=np.float32)
         
         success, rotation_vec, translation_vec = cv2.solvePnP(
             self.face_3d_model, 
@@ -81,9 +81,9 @@ class HeadPoseDetector:
     def draw_axes(self, frame, landmarks, image_shape):
         h, w, _ = image_shape
         
-        nose_tip = (int(landmarks[self.NOSE_TIP].x * w), int(landmarks[self.NOSE_TIP].y * h))
-        left_eye_left = (int(landmarks[self.LEFT_EYE_LEFT].x * w), int(landmarks[self.LEFT_EYE_LEFT].y * h))
-        right_eye_right = (int(landmarks[self.RIGHT_EYE_RIGHT].x * w), int(landmarks[self.RIGHT_EYE_RIGHT].y * h))
+        nose_tip = (int(landmarks.landmark[self.NOSE_TIP].x * w), int(landmarks.landmark[self.NOSE_TIP].y * h))
+        left_eye_left = (int(landmarks.landmark[self.LEFT_EYE_LEFT].x * w), int(landmarks.landmark[self.LEFT_EYE_LEFT].y * h))
+        right_eye_right = (int(landmarks.landmark[self.RIGHT_EYE_RIGHT].x * w), int(landmarks.landmark[self.RIGHT_EYE_RIGHT].y * h))
         
         focal_length = w
         center = (w / 2, h / 2)
