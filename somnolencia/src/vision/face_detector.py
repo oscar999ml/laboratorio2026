@@ -36,12 +36,14 @@ class FaceDetector:
         
         return x_min, y_min, x_max, y_max
 
-    def draw_landmarks(self, frame, landmarks):
+    def draw_landmarks(self, frame, landmarks, connections=None):
         annotated_frame = frame.copy()
+        if connections is None:
+            connections = self.mp_face_mesh.FACEMESH_TESSELATION
         self.mp_drawing.draw_landmarks(
             image=annotated_frame,
             landmark_list=landmarks,
-            connections=self.mp_face_mesh.FACEMESH_TESSELATION,
+            connections=connections,
             landmark_drawing_spec=self.drawing_spec,
             connection_drawing_spec=self.drawing_spec
         )

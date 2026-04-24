@@ -67,9 +67,10 @@ class HeadPoseDetector:
         pose_matrix = np.hstack((rotation_matrix, translation_vec))
         _, _, _, _, _, _, euler_angles = cv2.decomposeProjectionMatrix(pose_matrix)
         
-        pitch = abs(euler_angles[0, 0])
-        yaw = abs(euler_angles[1, 0])
-        roll = abs(euler_angles[2, 0])
+        # Keep signed angles; caller can use abs() for thresholds/printing.
+        pitch = float(euler_angles[0, 0])
+        yaw = float(euler_angles[1, 0])
+        roll = float(euler_angles[2, 0])
 
         return pitch, yaw, roll
 
@@ -104,7 +105,7 @@ class HeadPoseDetector:
             nose_tip,
             left_eye_left,
             right_eye_right,
-            (int(landmarks[self.CHIN].x * w), int(landmarks[self.CHIN].y * h)),
+            (int(landmarks.landmark[self.CHIN].x * w), int(landmarks.landmark[self.CHIN].y * h)),
         ], dtype=np.float64)
 
         dist_coeffs = np.zeros((4, 1), dtype=np.float64)
