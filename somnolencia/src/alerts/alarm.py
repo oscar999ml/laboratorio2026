@@ -79,7 +79,7 @@ class AlarmSystem:
         annotated = frame.copy()
         h, w, _ = annotated.shape
         
-        if state == "DROWSY" or state == "VERY_DROWSY":
+        if state in ("DROWSY", "VERY_DROWSY", "HIGH_RISK"):
             color = (0, 0, 255)
             text = f"ALERTA: {state}"
         elif state == "YAWN":
@@ -91,7 +91,7 @@ class AlarmSystem:
         cv2.rectangle(annotated, (0, 0), (w, 80), (0, 0, 0), -1)
         cv2.putText(annotated, text, (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2, cv2.LINE_AA)
         
-        if state == "DROWSY" or state == "VERY_DROWSY":
+        if state in ("DROWSY", "VERY_DROWSY", "HIGH_RISK"):
             cv2.putText(annotated, "ABRA LOS OJOS!", (w//2 - 150, h//2), 
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3, cv2.LINE_AA)
         

@@ -18,6 +18,8 @@ class DrowsinessDetector:
         head_nod_angle_threshold=25.0,
         head_nod_return_threshold=15.0,
         head_nod_max_duration_s=1.5,
+        head_tilt_min_duration_s=0.7,
+        head_tilt_smooth_alpha=0.35,
         eye_rub_min_duration_s=0.5,
     ):
         self.ear_threshold = ear_threshold
@@ -40,6 +42,9 @@ class DrowsinessDetector:
         self.head_nod_return_threshold = head_nod_return_threshold
         self.head_nod_max_duration_s = head_nod_max_duration_s
 
+        self.head_tilt_min_duration_s = head_tilt_min_duration_s
+        self.head_tilt_smooth_alpha = head_tilt_smooth_alpha
+
         self.eye_rub_min_duration_s = eye_rub_min_duration_s
         
         self.eye_closed_frames = 0
@@ -60,6 +65,11 @@ class DrowsinessDetector:
 
         self._head_nod_active = False
         self._head_nod_active_s = 0.0
+
+        self._head_tilt_active_s = 0.0
+        self._pitch_f = None
+        self._yaw_f = None
+        self._roll_f = None
         
         self.state = "NORMAL"
         self.alert_triggered = False
@@ -136,6 +146,15 @@ class DrowsinessDetector:
             or abs(roll) > self.head_roll_threshold
         )
 
+    def _smooth_angle(self, prev, new):
+        if new is None:
+            return prev
+        if prev is None:
+            return float(new)
+        a = float(self.head_tilt_smooth_alpha)
+        a = max(0.0, min(1.0, a))
+        return (1.0 - a) * float(prev) + a * float(new)
+
     def check_head_nod(self, pitch, dt=None):
         """Detect a simple nod-like event: pitch exceeds a threshold then returns below another threshold quickly."""
         if pitch is None:
@@ -197,7 +216,17 @@ class DrowsinessDetector:
             alerts.append("YAWNING")
 
         if pitch is not None and yaw is not None and roll is not None:
-            if self.check_head_tilted(pitch, yaw, roll):
+            self._pitch_f = self._smooth_angle(self._pitch_f, pitch)
+            self._yaw_f = self._smooth_angle(self._yaw_f, yaw)
+            self._roll_f = self._smooth_angle(self._roll_f, roll)
+
+            tilted_now = self.check_head_tilted(self._pitch_f, self._yaw_f, self._roll_f)
+            if tilted_now and dt is not None and dt > 0:
+                self._head_tilt_active_s += dt
+            elif not tilted_now:
+                self._head_tilt_active_s = 0.0
+
+            if tilted_now and self._head_tilt_active_s >= self.head_tilt_min_duration_s:
                 alerts.append("HEAD_TILTED")
 
         # Head nod
@@ -245,5 +274,9 @@ class DrowsinessDetector:
         self._perclos_closed_s = 0.0
         self._head_nod_active = False
         self._head_nod_active_s = 0.0
+        self._head_tilt_active_s = 0.0
+        self._pitch_f = None
+        self._yaw_f = None
+        self._roll_f = None
         self.state = "NORMAL"
         self.alert_triggered = False
