@@ -1,193 +1,174 @@
+import argparse
+import json
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import soundfile as sf
-from core.PitchDetector import PitchDetector
-from core.PitchCorrector import PitchCorrector
-from core.notes import find_nearest_note, hz_to_note
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.config import AudioIOConfig, OfflineRenderConfig, PitchConfig
+from core.notes import find_nearest_note
+from core.pipeline import PitchProcessingPipeline
+
 
 class OfflineProcessor:
     def __init__(self, sample_rate=44100):
         self.sample_rate = sample_rate
-        self.detector = PitchDetector(sample_rate=sample_rate)
-        self.corrector = PitchCorrector(sample_rate=sample_rate)
-        
+
     def load_audio(self, filepath):
         audio, sr = sf.read(filepath)
         if len(audio.shape) > 1:
             audio = audio[:, 0]
+        audio = audio.astype(np.float32)
+
         if sr != self.sample_rate:
             audio = self._resample(audio, sr, self.sample_rate)
+
         return audio
-    
+
     def _resample(self, audio, orig_sr, target_sr):
-        duration = len(audio) / orig_sr
+        duration = len(audio) / max(orig_sr, 1)
         samples = int(duration * target_sr)
         indices = np.linspace(0, len(audio) - 1, samples)
-        return np.interp(indices, np.arange(len(audio)), audio).astype(audio.dtype)
-    
-    def process(self, audio, strength=0.8, smooth=True):
-        chunk_size = 4096
-        hop_size = 2048
-        
-        output = np.zeros_like(audio)
-        num_chunks = (len(audio) - chunk_size) // hop_size + 1
-        
-        prev_pitch = 0
-        pitch_history = []
-        
-        for i in range(num_chunks):
-            start = i * hop_size
-            end = min(start + chunk_size, len(audio))
-            chunk = audio[start:end]
-            
-            if len(chunk) < 1024:
-                output[start:end] = chunk
+        return np.interp(indices, np.arange(len(audio)), audio).astype(np.float32)
+
+    def analyze_audio(self, audio, sample_rate):
+        chunk = 4096
+        hop = 1024
+        pitches = []
+
+        for start in range(0, max(1, len(audio) - chunk), hop):
+            frame = audio[start : start + chunk]
+            if len(frame) < 1024:
                 continue
-            
-            pitch = self.detector.detect(chunk, method='autocorrelation')
-            
-            if smooth and pitch > 0 and prev_pitch > 0:
-                pitch = 0.7 * prev_pitch + 0.3 * pitch
-            
-            if pitch > 0:
-                corrected = self.corrector.auto_correct(chunk, pitch, strength)
-                output[start:end] = corrected[:end-start]
-                prev_pitch = pitch
-                pitch_history.append(pitch)
-            else:
-                output[start:end] = chunk
-            
-            progress = (i + 1) / num_chunks * 100
-            if i % 10 == 0:
-                print(f"Procesando: {progress:.1f}%", end='\r')
-        
-        print(f"Procesando: 100.0% OK")
-        return output
-    
-    def process_with_key(self, audio, key_note, key_octave, strength=0.8):
-        from core.notes import note_to_hz
-        target_freq = note_to_hz(key_note, key_octave)
-        
-        chunk_size = 4096
-        hop_size = 2048
-        
-        output = np.zeros_like(audio)
-        num_chunks = (len(audio) - chunk_size) // hop_size + 1
-        
-        for i in range(num_chunks):
-            start = i * hop_size
-            end = min(start + chunk_size, len(audio))
-            chunk = audio[start:end]
-            
-            if len(chunk) < 1024:
-                output[start:end] = chunk
-                continue
-            
-            pitch = self.detector.detect(chunk, method='autocorrelation')
-            
-            if pitch > 0:
-                ratio = self.corrector.correct_to_note(pitch, target_freq, strength)
-                corrected = self.corrector.shift_pitch(chunk, ratio)
-                output[start:end] = corrected[:end-start]
-            else:
-                output[start:end] = chunk
-            
-            progress = (i + 1) / num_chunks * 100
-            if i % 10 == 0:
-                print(f"Procesando: {progress:.1f}%", end='\r')
-        
-        print(f"Procesando: 100.0% OK")
-        return output
-    
+            # Simple FFT-based hint for quick diagnostics in CLI logs.
+            spectrum = np.abs(np.fft.rfft(frame * np.hanning(len(frame))))
+            freqs = np.fft.rfftfreq(len(frame), d=1.0 / sample_rate)
+            idx = int(np.argmax(spectrum[1:]) + 1) if len(spectrum) > 1 else 0
+            pitch = float(freqs[idx]) if idx > 0 else 0.0
+            if 50 <= pitch <= 1200:
+                pitches.append(pitch)
+
+        if not pitches:
+            return {"average_pitch": 0.0, "detected_note": "-"}
+
+        avg_pitch = float(np.mean(pitches))
+        note, octave, cents = find_nearest_note(avg_pitch)
+        label = f"{note}{octave} ({cents:+.1f}c)" if note else "-"
+        return {
+            "average_pitch": avg_pitch,
+            "detected_note": label,
+        }
+
+    def process(self, audio, pitch_config, render_config):
+        io_config = AudioIOConfig(sample_rate=self.sample_rate, channels=1)
+        pipeline = PitchProcessingPipeline(
+            io_config=io_config,
+            pitch_config=pitch_config,
+            render_config=render_config,
+        )
+        output, stats = pipeline.process_offline(audio)
+        return output, stats
+
     def save_audio(self, audio, filepath):
         sf.write(filepath, audio, self.sample_rate)
-        print(f"Guardado: {filepath}")
-    
-    def analyze_audio(self, audio):
-        print("\n--- Análisis de Audio ---")
-        chunk_size = 4096
-        hop_size = 2048
-        
-        pitches = []
-        notes = []
-        
-        num_chunks = (len(audio) - chunk_size) // hop_size + 1
-        
-        for i in range(0, len(audio) - chunk_size, hop_size):
-            chunk = audio[i:i + chunk_size]
-            pitch = self.detector.detect(chunk, method='autocorrelation')
-            
-            if pitch > 50:
-                pitches.append(pitch)
-                note, octave, cents = find_nearest_note(pitch)
-                if note:
-                    notes.append(f"{note}{octave}")
-        
-        if pitches:
-            avg_pitch = np.mean(pitches)
-            print(f"Frecuencia promedio: {avg_pitch:.1f} Hz")
-            
-            note, octave, cents = find_nearest_note(avg_pitch)
-            if note:
-                print(f"Nota detectada: {note}{octave} ({cents:+.1f} cents)")
-        
-        if notes:
-            from collections import Counter
-            note_counts = Counter(notes)
-            most_common = note_counts.most_common(5)
-            print(f"Notas más frecuentes: {', '.join([f'{n}({c})' for n,c in most_common])}")
-        
-        print("------------------------\n")
-        return pitches, notes
 
-def process_file(input_path, output_path=None, strength=0.8):
-    if output_path is None:
-        import time
-        output_path = input_path.replace('.wav', f'_autotune_{int(time.time())}.wav')
-    
-    processor = OfflineProcessor()
-    
-    print(f"Cargando: {input_path}")
+
+def build_parser():
+    parser = argparse.ArgumentParser(description="Procesamiento offline con arquitectura modular")
+    parser.add_argument("input", help="Archivo de entrada WAV")
+    parser.add_argument("--output", help="Ruta de salida WAV")
+    parser.add_argument("--method", choices=["autocorrelation", "yin"], default="autocorrelation")
+    parser.add_argument("--strength", type=float, default=0.8, help="Intensidad de corrección (0-1)")
+    parser.add_argument("--smooth", type=float, default=0.3, help="Suavizado temporal del pitch (0-0.95)")
+    parser.add_argument("--dry-wet", type=float, default=1.0, help="Mezcla señal original/procesada (0-1)")
+    parser.add_argument("--key", type=str, default=None, help="Nota objetivo fija (ej. C, F#, A)")
+    parser.add_argument("--octave", type=int, default=4, help="Octava de la nota objetivo")
+    parser.add_argument("--chunk", type=int, default=4096)
+    parser.add_argument("--hop", type=int, default=1024)
+    parser.add_argument("--normalize", action="store_true", help="Normaliza salida para evitar clipping")
+    parser.add_argument("--json-report", action="store_true", help="Imprime resumen JSON")
+    return parser
+
+
+def process_file(args):
+    input_path = args.input
+    if not os.path.isabs(input_path):
+        input_path = os.path.abspath(input_path)
+
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"Archivo no encontrado: {input_path}")
+
+    if args.output:
+        output_path = args.output
+    else:
+        base, ext = os.path.splitext(input_path)
+        output_path = f"{base}_autotune_pro{ext}"
+
+    processor = OfflineProcessor(sample_rate=44100)
     audio = processor.load_audio(input_path)
-    
-    print(f"Duración: {len(audio)/processor.sample_rate:.2f} segundos")
-    
-    processor.analyze_audio(audio)
-    
-    print("\nAplicando corrección de pitch...")
-    corrected = processor.process(audio, strength=strength)
-    
-    processor.save_audio(corrected, output_path)
-    
+
+    pitch_config = PitchConfig(
+        method=args.method,
+        strength=float(np.clip(args.strength, 0.0, 1.0)),
+        smoothing=float(np.clip(args.smooth, 0.0, 0.95)),
+        dry_wet=float(np.clip(args.dry_wet, 0.0, 1.0)),
+        key_note=args.key.upper() if args.key else None,
+        key_octave=args.octave,
+    )
+    render_config = OfflineRenderConfig(
+        chunk_size=max(512, args.chunk),
+        hop_size=max(256, args.hop),
+        normalize_output=bool(args.normalize),
+    )
+
+    analysis = processor.analyze_audio(audio, sample_rate=processor.sample_rate)
+    processed, stats = processor.process(audio, pitch_config=pitch_config, render_config=render_config)
+    processor.save_audio(processed, output_path)
+
+    report = {
+        "input": input_path,
+        "output": output_path,
+        "duration_seconds": round(len(audio) / processor.sample_rate, 2),
+        "analysis": analysis,
+        "stats": {
+            "chunks_total": stats.chunks_total,
+            "chunks_voiced": stats.chunks_voiced,
+            "average_pitch": round(stats.average_pitch, 2),
+        },
+        "config": {
+            "method": pitch_config.method,
+            "strength": pitch_config.strength,
+            "smoothing": pitch_config.smoothing,
+            "dry_wet": pitch_config.dry_wet,
+            "key": pitch_config.key_note,
+            "octave": pitch_config.key_octave,
+        },
+    }
+
+    if args.json_report:
+        print(json.dumps(report, indent=2, ensure_ascii=True))
+    else:
+        print("\n=== Procesamiento Offline Profesional ===")
+        print(f"Entrada: {report['input']}")
+        print(f"Salida: {report['output']}")
+        print(f"Duracion: {report['duration_seconds']} s")
+        print(f"Pitch promedio estimado: {report['analysis']['average_pitch']:.2f} Hz")
+        print(f"Nota estimada: {report['analysis']['detected_note']}")
+        print(
+            f"Frames con voz: {report['stats']['chunks_voiced']} / {report['stats']['chunks_total']}"
+        )
+
     return output_path
 
+
+def main():
+    parser = build_parser()
+    args = parser.parse_args()
+    process_file(args)
+
+
 if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) < 2:
-        print("Uso: python offline.py <archivo.wav> [fuerza]")
-        print("Ejemplo: python offline.py grabacion.wav 0.8")
-    else:
-        input_file = sys.argv[1]
-        
-        if not os.path.isabs(input_file):
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            test_paths = [
-                os.path.join(base_dir, input_file),
-                os.path.join(base_dir, '..', input_file),
-                os.path.join(base_dir, '..', '..', input_file),
-            ]
-            found = False
-            for path in test_paths:
-                if os.path.exists(path):
-                    input_file = path
-                    found = True
-                    break
-            if not found:
-                print(f"Error: Archivo no encontrado: {input_file}")
-        
-        strength = float(sys.argv[2]) if len(sys.argv) > 2 else 0.8
-        process_file(input_file, strength=strength)
+    main()

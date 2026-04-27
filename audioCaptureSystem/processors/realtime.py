@@ -1,194 +1,160 @@
+import argparse
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import time
 
 import numpy as np
 import sounddevice as sd
-from core.PitchDetector import PitchDetector
-from core.PitchCorrector import PitchCorrector
-from core.notes import find_nearest_note, note_to_hz, NOTES
-import argparse
 
-class AutoTuneApp:
-    def __init__(self, strength=0.8, key=None, octave=4):
-        self.sample_rate = 44100
-        self.blocksize = 2048
-        
-        self.detector = PitchDetector(sample_rate=self.sample_rate)
-        self.corrector = PitchCorrector(sample_rate=self.sample_rate)
-        
-        self.strength = strength
-        self.key = key.upper() if key else None
-        self.octave = octave
-        self.enabled = True
-        self.prev_pitch = 0
-        self.pitch_history = []
-        
-    def toggle(self):
-        self.enabled = not self.enabled
-        
-    def process(self, indata):
-        if not self.enabled:
-            return indata[:, 0] if len(indata.shape) > 1 else indata
-            
-        audio = indata[:, 0] if len(indata.shape) > 1 else indata
-        pitch = self.detector.detect(audio, method='autocorrelation')
-        
-        if pitch > 50:
-            if self.prev_pitch > 0:
-                pitch = 0.7 * self.prev_pitch + 0.3 * pitch
-            self.prev_pitch = pitch
-            self.pitch_history.append(pitch)
-            
-            note, octave, cents = find_nearest_note(pitch)
-            
-            if self.key:
-                target_freq = note_to_hz(self.key, self.octave)
-            else:
-                target_freq = note_to_hz(note, octave) if note else pitch
-            
-            target_note = self.key if self.key else note
-            print(f"Pitch: {pitch:5.0f}Hz -> {note}{octave} ({cents:+5.1f}c) | Meta: {target_note} | Fuerza: {int(self.strength*100)}%", end='\r')
-            
-            if target_freq and abs(target_freq - pitch) > 1:
-                corrected = self.corrector.process_segment(audio, pitch, target_freq, self.strength)
-                return corrected
-            
-            return audio
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from core.config import AudioIOConfig, PitchConfig
+from core.pipeline import PitchProcessingPipeline
+
+
+def list_devices():
+    print("\n=== Entradas ===")
+    devices = sd.query_devices()
+    for i, dev in enumerate(devices):
+        if dev["max_input_channels"] > 0:
+            print(f"[{i}] {dev['name'][:60]}")
+
+    print("\n=== Salidas ===")
+    for i, dev in enumerate(devices):
+        if dev["max_output_channels"] > 0:
+            print(f"[{i}] {dev['name'][:60]}")
+
+
+class RealtimeAutoTune:
+    def __init__(self, args):
+        self.io_config = AudioIOConfig(
+            sample_rate=args.sample_rate,
+            channels=1,
+            block_size=args.block_size,
+        )
+        self.pitch_config = PitchConfig(
+            method=args.method,
+            strength=float(np.clip(args.strength, 0.0, 1.0)),
+            smoothing=float(np.clip(args.smooth, 0.0, 0.95)),
+            dry_wet=float(np.clip(args.dry_wet, 0.0, 1.0)),
+            key_note=args.key.upper() if args.key else None,
+            key_octave=args.octave,
+            confidence_threshold=args.threshold,
+        )
+        self.pipeline = PitchProcessingPipeline(
+            io_config=self.io_config,
+            pitch_config=self.pitch_config,
+        )
+
+        self.input_device = args.input_device
+        self.output_device = args.output_device
+        self.duration = args.duration
+        self.bypass = args.bypass
+
+        self.pitch_values = []
+        self.frames_total = 0
+        self.frames_voiced = 0
+
+    def callback(self, indata, outdata, frames, callback_time, status):
+        if status:
+            print(f"Stream status: {status}")
+
+        mono = indata[:, 0] if indata.ndim > 1 else indata
+        if self.bypass:
+            processed = mono
+            pitch = 0.0
+            note = "-"
         else:
-            self.prev_pitch = 0
-            return audio
+            processed, pitch, note = self.pipeline.process_chunk(mono)
 
-def show_menu():
-    print("\n" + "="*50)
-    print("      AUTO-TUNE SYSTEM")
-    print("="*50)
-    print("  [1] Tiempo Real (60 seg)")
-    print("  [2] Tiempo Real (30 seg)")
-    print("  [3] Offline - Procesar archivo")
-    print("  [4] Ver dispositivos")
-    print("  [5] Salir")
-    print("="*50)
+        self.frames_total += 1
+        if pitch > 0:
+            self.frames_voiced += 1
+            self.pitch_values.append(pitch)
 
-def run_realtime(duration=60, strength=0.8, key=None, octave=4):
-    app = AutoTuneApp(strength=strength, key=key, octave=octave)
-    
-    print(f"\nIniciando Auto-Tune...")
-    print(f"Fuerza: {int(strength*100)}% | Nota: {key if key else 'Auto'}")
-    print(f"Duracion: {duration} segundos")
-    print("Presiona Ctrl+C para detener\n")
-    
-    def callback(indata, outdata, frames, time, status):
-        processed = app.process(indata)
         outdata[:, 0] = processed
         if outdata.shape[1] > 1:
             outdata[:, 1] = processed
-    
-    try:
-        with sd.Stream(channels=2, samplerate=44100, blocksize=2048, callback=callback):
-            print("Grabando... (Ctrl+C para detener)")
-            sd.sleep(duration * 1000)
-    except KeyboardInterrupt:
-        if app.pitch_history:
-            avg = sum(app.pitch_history) / len(app.pitch_history)
-            print(f"\n\nPitch promedio: {avg:.1f} Hz")
-        print("\nDetenido.")
-    except Exception as e:
-        print(f"Error: {e}")
 
-def run_offline():
-    print("\n--- Offline ---")
-    print("Archivos WAV disponibles:")
-    
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    import glob
-    
-    wav_files = glob.glob(os.path.join(base_dir, "*.wav"))
-    if not wav_files:
-        print("No hay archivos WAV")
-        return
-    
-    for i, f in enumerate(wav_files):
-        print(f"  [{i+1}] {os.path.basename(f)}")
-    
-    sel = input("\nSelecciona numero: ").strip()
-    if not sel.isdigit() or int(sel) < 1 or int(sel) > len(wav_files):
-        print("Cancelado")
-        return
-    
-    filepath = wav_files[int(sel)-1]
-    strength = input("Fuerza (0-1, Enter=0.8): ").strip()
-    strength = float(strength) if strength else 0.8
-    
-    import soundfile as sf
-    
-    print(f"\nProcesando: {os.path.basename(filepath)}")
-    audio, sr = sf.read(filepath)
-    if len(audio.shape) > 1:
-        audio = audio[:, 0]
-    
-    detector = PitchDetector(sample_rate=44100)
-    corrector = PitchCorrector(sample_rate=44100)
-    
-    chunk_size = 2048
-    hop_size = 1024
-    output = np.zeros_like(audio)
-    num_chunks = max(1, (len(audio) - chunk_size) // hop_size + 1)
-    
-    print("Procesando...")
-    for i in range(num_chunks):
-        start = i * hop_size
-        end = min(start + chunk_size, len(audio))
-        chunk = audio[start:end]
-        
-        if len(chunk) < 512:
-            output[start:end] = chunk
-            continue
-        
-        pitch = detector.detect(chunk, method='autocorrelation')
-        
-        if pitch > 50:
-            corrected = corrector.auto_correct(chunk, pitch, strength)
-            output[start:end] = corrected[:end-start]
-        
-        if i % 20 == 0:
-            print(f"Progreso: {min(100, i/num_chunks*100):.0f}%", end='\r')
-    
-    print("Progreso: 100%")
-    
-    output_path = filepath.replace('.wav', '_autotune.wav')
-    sf.write(output_path, output, 44100)
-    print(f"\nGuardado: {output_path}")
+        if pitch > 0:
+            print(
+                f"Pitch {pitch:7.2f} Hz | Nota {note:>4} | Strength {self.pitch_config.strength:.2f} | DryWet {self.pitch_config.dry_wet:.2f}",
+                end="\r",
+            )
 
-def list_devices():
-    print("\n=== Microfonos ===")
-    for i, d in enumerate(sd.query_devices()):
-        if d['max_input_channels'] > 0:
-            print(f"  [{i}] {d['name'][:50]}")
-    
-    print("\n=== Altavoces ===")
-    for i, d in enumerate(sd.query_devices()):
-        if d['max_output_channels'] > 0:
-            print(f"  [{i}] {d['name'][:50]}")
+    def run(self):
+        print("\n=== Realtime Auto-Tune Pro ===")
+        print(f"Sample rate: {self.io_config.sample_rate}")
+        print(f"Block size: {self.io_config.block_size}")
+        print(f"Metodo: {self.pitch_config.method}")
+        print(f"Strength: {self.pitch_config.strength}")
+        print(f"Dry/Wet: {self.pitch_config.dry_wet}")
+        print(
+            f"Key lock: {self.pitch_config.key_note or 'AUTO'}{self.pitch_config.key_octave if self.pitch_config.key_note else ''}"
+        )
+        print("Ctrl+C para detener.\n")
+
+        stream_devices = (self.input_device, self.output_device)
+        if self.input_device is None and self.output_device is None:
+            stream_devices = None
+
+        start_time = time.time()
+        try:
+            with sd.Stream(
+                device=stream_devices,
+                channels=2,
+                samplerate=self.io_config.sample_rate,
+                blocksize=self.io_config.block_size,
+                callback=self.callback,
+            ):
+                if self.duration > 0:
+                    sd.sleep(int(self.duration * 1000))
+                else:
+                    while True:
+                        sd.sleep(250)
+        except KeyboardInterrupt:
+            pass
+
+        elapsed = time.time() - start_time
+        voiced_ratio = (self.frames_voiced / max(self.frames_total, 1)) * 100.0
+        avg_pitch = float(np.mean(self.pitch_values)) if self.pitch_values else 0.0
+
+        print("\n\n=== Resumen ===")
+        print(f"Tiempo ejecutado: {elapsed:.2f} s")
+        print(f"Frames con voz: {self.frames_voiced}/{self.frames_total} ({voiced_ratio:.1f}%)")
+        print(f"Pitch promedio: {avg_pitch:.2f} Hz")
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description="Auto-Tune en tiempo real (arquitectura modular)")
+    parser.add_argument("--list-devices", action="store_true", help="Listar dispositivos y salir")
+    parser.add_argument("--input-device", type=int, default=None)
+    parser.add_argument("--output-device", type=int, default=None)
+    parser.add_argument("--sample-rate", type=int, default=44100)
+    parser.add_argument("--block-size", type=int, default=1024)
+    parser.add_argument("--method", choices=["autocorrelation", "yin"], default="autocorrelation")
+    parser.add_argument("--strength", type=float, default=0.8)
+    parser.add_argument("--smooth", type=float, default=0.3)
+    parser.add_argument("--dry-wet", type=float, default=1.0)
+    parser.add_argument("--threshold", type=float, default=50.0)
+    parser.add_argument("--key", type=str, default=None, help="Nota fija objetivo (C, F#, A)")
+    parser.add_argument("--octave", type=int, default=4)
+    parser.add_argument("--duration", type=float, default=30.0, help="Segundos; <=0 indefinido")
+    parser.add_argument("--bypass", action="store_true", help="Monitoreo sin correccion")
+    return parser
+
 
 def main():
-    while True:
-        show_menu()
-        choice = input("Selecciona: ").strip()
-        
-        if choice == "1":
-            run_realtime(60)
-        elif choice == "2":
-            run_realtime(30)
-        elif choice == "3":
-            run_offline()
-        elif choice == "4":
-            list_devices()
-        elif choice == "5":
-            print("Adios!")
-            break
-        else:
-            print("Opcion invalida")
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if args.list_devices:
+        list_devices()
+        return
+
+    app = RealtimeAutoTune(args)
+    app.run()
+
 
 if __name__ == "__main__":
     main()
