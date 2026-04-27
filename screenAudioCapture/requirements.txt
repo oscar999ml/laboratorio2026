@@ -1,7 +1,2 @@
-mss==9.1
-opencv-python==4.8.1.78
-numpy==1.26.3
-sounddevice==0.4.6
-PyAudio==0.2.14
-NAudio==2.2.1
-tkinter-to-string==0.0.2
+# Este proyecto usa FFmpeg como backend principal de captura.
+# No requiere dependencias Python de terceros para la grabacion base.
