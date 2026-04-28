@@ -64,15 +64,25 @@ class HeadPoseDetector:
             return 0.0, 0.0, 0.0
 
         rotation_matrix, _ = cv2.Rodrigues(rotation_vec)
-        pose_matrix = np.hstack((rotation_matrix, translation_vec))
-        _, _, _, _, _, _, euler_angles = cv2.decomposeProjectionMatrix(pose_matrix)
-        
-        # Keep signed angles; caller can use abs() for thresholds/printing.
-        pitch = float(euler_angles[0, 0])
-        yaw = float(euler_angles[1, 0])
-        roll = float(euler_angles[2, 0])
 
-        return pitch, yaw, roll
+        # More stable than decomposeProjectionMatrix for our use-case.
+        angles, *_ = cv2.RQDecomp3x3(rotation_matrix)
+        pitch = float(angles[0])
+        yaw = float(angles[1])
+        roll = float(angles[2])
+
+        def _norm180(a):
+            return ((a + 180.0) % 360.0) - 180.0
+
+        def _squash90(a):
+            a = _norm180(a)
+            if a > 90.0:
+                a -= 180.0
+            elif a < -90.0:
+                a += 180.0
+            return a
+
+        return _squash90(pitch), _squash90(yaw), _squash90(roll)
 
     def is_head_tilted(self, pitch, yaw, roll):
         return (pitch > self.pitch_threshold or 

@@ -1,0 +1,28 @@
+{
+  "driver": "kevin",
+  "profile": {
+    "ear_threshold": 1.146,
+    "mar_threshold": 0.6,
+    "head_pitch_threshold": 33.4,
+    "head_yaw_threshold": 24.1,
+    "head_roll_threshold": 20.0,
+    "head_tilt_min_duration_s": 0.8,
+    "perclos_threshold": 0.4,
+    "alert_window_s": 60.0,
+    "high_risk_score_threshold": 6
+  },
+  "debug": {
+    "baseline_log": "data\\logs\\calibration\\kevin\\bueno\\drowsiness_calibration_kevin_bueno_20260428_112421.log",
+    "counts": {
+      "baseline_samples": 3407,
+      "yawn_samples": 864
+    },
+    "baseline_percentiles": {
+      "ear_p0_5": 1.19703,
+      "ear_p1": 1.248,
+      "ear_p5": 1.33,
+      "mar_p95": 0.277,
+      "mar_p99": 0.563
+    }
+  }
+}

@@ -9,6 +9,7 @@ import cv2
 import time
 from datetime import datetime
 from collections import deque, Counter
+import json
 
 from src.vision.face_detector import FaceDetector
 from src.vision.eye_tracker import EyeTracker
@@ -33,7 +34,12 @@ class DrowsinessSystem:
                  driver=None,
                  log_tag=None,
                  alert_window_s=60.0,
-                 high_risk_score_threshold=6):
+                 high_risk_score_threshold=6,
+                 head_pitch_threshold=20.0,
+                 head_yaw_threshold=20.0,
+                 head_roll_threshold=20.0,
+                 head_tilt_min_duration_s=0.7,
+                 perclos_threshold=0.4):
         self.camera_index = camera_index
         self.video_path = video_path
         self.stream_url = stream_url
@@ -55,7 +61,12 @@ class DrowsinessSystem:
         self.head_pose_detector = HeadPoseDetector()
         self.drowsiness_detector = DrowsinessDetector(
             ear_threshold=ear_threshold,
-            mar_threshold=mar_threshold
+            mar_threshold=mar_threshold,
+            head_pitch_threshold=head_pitch_threshold,
+            head_yaw_threshold=head_yaw_threshold,
+            head_roll_threshold=head_roll_threshold,
+            head_tilt_min_duration_s=head_tilt_min_duration_s,
+            perclos_threshold=perclos_threshold,
         )
         self.alarm = AlarmSystem(sound_enabled=True, visual_enabled=True)
 
@@ -109,6 +120,24 @@ class DrowsinessSystem:
             "EYES_OCCLUDED": 1,
             "FACE_LOST": 1,
         }
+
+        # Track how long the current alert/state has been active (seconds)
+        self._active_keys_since = {}
+
+    def _update_active_durations(self, now_s: float, active_keys) -> dict:
+        active_set = set(active_keys or [])
+
+        # Start timers for newly active keys
+        for key in active_set:
+            if key not in self._active_keys_since:
+                self._active_keys_since[key] = now_s
+
+        # Clear timers for keys that are no longer active
+        for key in list(self._active_keys_since.keys()):
+            if key not in active_set:
+                del self._active_keys_since[key]
+
+        return {key: now_s - since for key, since in self._active_keys_since.items()}
 
     def _get_eye_centers_px(self, face_landmarks, image_shape):
         h, w, _ = image_shape
@@ -258,12 +287,24 @@ class DrowsinessSystem:
             return False
         return True
 
-    def run(self):
+    def run(self) -> int:
+        """Run the live/video drowsiness detection loop.
+
+        Returns:
+            int: 0 on a normal/expected stop (ESC, window closed, Ctrl+C), 1 on errors.
+        """
+
         if not self._init_capture():
-            return
+            msg = f"No se pudo abrir la fuente de entrada: {self.source_type}"
+            print(f"ERROR: {msg}")
+            self.logger.error(msg)
+            return 1
 
         self.start_time = time.time()
         prev_time = time.time()
+
+        stop_reason: str | None = None
+        exit_code = 0
 
         try:
             while True:
@@ -273,9 +314,12 @@ class DrowsinessSystem:
                         self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                         ret, frame = self.cap.read()
                         if not ret:
+                            stop_reason = "Video terminado (loop)"
                             break
                     else:
                         self.logger.error("Error al leer frame o video terminado")
+                        stop_reason = "Error al leer frame o video terminado"
+                        exit_code = 1
                         break
 
                 self.frame_count += 1
@@ -316,8 +360,18 @@ class DrowsinessSystem:
 
                     occlusion_alerts = self._detect_occlusions(hands_landmarks, landmarks, frame.shape) if self.hands_tracker else []
 
+                    # If mouth/eyes are covered, suppress MAR/EAR-based signals to avoid false events.
+                    ear_for_detector = None if "EYES_OCCLUDED" in occlusion_alerts else ear
+                    mar_for_detector = None if "MOUTH_COVERED" in occlusion_alerts else mar
+
                     detection_result = self.drowsiness_detector.detect(
-                        ear=ear, mar=mar, pitch=pitch, yaw=yaw, roll=roll, dt=dt, eye_rub=eye_rub
+                        ear=ear_for_detector,
+                        mar=mar_for_detector,
+                        pitch=pitch,
+                        yaw=yaw,
+                        roll=roll,
+                        dt=dt,
+                        eye_rub=eye_rub,
                     )
 
                     if occlusion_alerts:
@@ -336,6 +390,10 @@ class DrowsinessSystem:
                         detection_result["state"] = "HIGH_RISK"
                         if "HIGH_RISK" not in detection_result["alerts"]:
                             detection_result["alerts"].append("HIGH_RISK")
+
+                    # Duration counters for banner: alerts + current state
+                    active_keys = list(detection_result.get("alerts") or []) + [f"STATE:{detection_result['state']}"]
+                    active_durations_s = self._update_active_durations(now_s, active_keys)
 
                     if detection_result["alert_triggered"] or high_risk:
                         self.alarm.trigger_alarm(alert_type=detection_result["state"])
@@ -373,10 +431,25 @@ class DrowsinessSystem:
                     annotated_frame = self.alarm.draw_alert(
                         annotated_frame,
                         detection_result["alerts"],
-                        detection_result["state"]
+                        detection_result["state"],
+                        risk_score=window_score,
+                        risk_score_threshold=self._high_risk_score_threshold,
+                        active_durations_s=active_durations_s,
                     )
 
-                    annotated_frame = self._draw_info(annotated_frame, ear, mar, pitch, yaw, roll, detection_result)
+                    annotated_frame = self._draw_info(
+                        annotated_frame,
+                        ear=ear,
+                        mar=mar,
+                        pitch=pitch,
+                        yaw=yaw,
+                        roll=roll,
+                        detection_result=detection_result,
+                        ear_used=ear_for_detector,
+                        mar_used=mar_for_detector,
+                        occlusion_alerts=occlusion_alerts,
+                        window_score=window_score,
+                    )
 
                     if self.gps and self.gps.is_valid():
                         self.logger.log_gps_data(
@@ -451,12 +524,19 @@ class DrowsinessSystem:
 
                 cv2.imshow("Deteccion de Somnolencia", annotated_frame)
 
-                # If user closes the window via the X button
-                if cv2.getWindowProperty("Deteccion de Somnolencia", cv2.WND_PROP_VISIBLE) < 1:
+                # Process window events (required for X button to be detected reliably on Windows)
+                key = cv2.waitKey(1) & 0xFF
+                if key in (27, ord('q')):
+                    stop_reason = "Salida por ESC" if key == 27 else "Salida por q"
                     break
 
-                key = cv2.waitKey(1) & 0xFF
-                if key == 27:
+                # If user closes the window via the X button
+                try:
+                    visible = cv2.getWindowProperty("Deteccion de Somnolencia", cv2.WND_PROP_VISIBLE)
+                except cv2.error:
+                    visible = 0
+                if visible < 1:
+                    stop_reason = "Ventana cerrada (X)"
                     break
 
                 if key == ord('s'):
@@ -468,39 +548,83 @@ class DrowsinessSystem:
 
         except KeyboardInterrupt:
             self.logger.info("Ejecucion interrumpida por el usuario (Ctrl+C)")
+            stop_reason = "Interrumpido por Ctrl+C"
+            exit_code = 0
         except Exception as e:
             self.logger.exception(f"Fallo inesperado en el loop principal: {e}")
+            stop_reason = f"Fallo inesperado: {e}"
+            exit_code = 1
 
         finally:
             self.stop()
 
-    def _draw_info(self, frame, ear, mar, pitch, yaw, roll, detection_result):
+        if stop_reason:
+            print(f"Salida: {stop_reason}")
+
+        return exit_code
+
+    def _draw_info(
+        self,
+        frame,
+        ear,
+        mar,
+        pitch,
+        yaw,
+        roll,
+        detection_result,
+        ear_used=None,
+        mar_used=None,
+        occlusion_alerts=None,
+        window_score=None,
+    ):
         h, w, _ = frame.shape
         
         info_y = h - 140
-        cv2.putText(frame, f"EAR: {ear:.3f} (umbral: {self.eye_tracker.ear_threshold})", 
-                   (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(frame, f"MAR: {mar:.3f} (umbral: {self.mouth_tracker.mar_threshold})", 
-                   (10, info_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.putText(frame, f"Pitch: {abs(pitch):.1f}  Yaw: {abs(yaw):.1f}  Roll: {abs(roll):.1f}", 
-                   (10, info_y + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        occlusion_alerts = occlusion_alerts or []
+
+        if ear_used is None:
+            ear_txt = f"EAR: -- (ocluido)  thr:{self.eye_tracker.ear_threshold:.3f}"
+        else:
+            ear_txt = f"EAR: {ear_used:.3f}  thr:{self.eye_tracker.ear_threshold:.3f}"
+        if mar_used is None:
+            mar_txt = f"MAR: -- (ocluido)  thr:{self.mouth_tracker.mar_threshold:.3f}"
+        else:
+            mar_txt = f"MAR: {mar_used:.3f}  thr:{self.mouth_tracker.mar_threshold:.3f}"
+
+        cv2.putText(frame, ear_txt, (10, info_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(frame, mar_txt, (10, info_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        cv2.putText(
+            frame,
+            f"Head abs P/Y/R: {abs(pitch):.1f}/{abs(yaw):.1f}/{abs(roll):.1f}  thr:{self.drowsiness_detector.head_pitch_threshold:.1f}/{self.drowsiness_detector.head_yaw_threshold:.1f}/{self.drowsiness_detector.head_roll_threshold:.1f}",
+            (10, info_y + 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (255, 255, 255),
+            1,
+        )
+
         cv2.putText(frame, f"Estado: {detection_result['state']}", 
                    (10, info_y + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
 
         alerts = detection_result.get("alerts") or []
         perclos = detection_result.get("perclos", 0.0)
-        alerts_text = "Alertas: " + (", ".join(alerts) if alerts else "-" )
-        cv2.putText(frame, f"{alerts_text}",
-                    (10, info_y + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-        cv2.putText(frame, f"PERCLOS(30s): {perclos:.2f}",
-                    (10, info_y + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
-        
-        if self.gps and self.gps.is_valid():
-            gps_text = f"GPS: {self.gps.get_coordinates_string()}"
-        else:
-            gps_text = "GPS: No disponible"
-        cv2.putText(frame, gps_text, (w - 300, h - 20),
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        alerts_text = "Alertas: " + (", ".join(alerts) if alerts else "-")
+        if window_score is not None:
+            alerts_text += f"  | score:{int(window_score)}/{int(self._high_risk_score_threshold)}"
+        if occlusion_alerts:
+            alerts_text += f"  | oclusion:{','.join(occlusion_alerts)}"
+
+        cv2.putText(frame, alerts_text, (10, info_y + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        cv2.putText(
+            frame,
+            f"PERCLOS(30s): {perclos:.2f}  thr:{self.drowsiness_detector.perclos_threshold:.2f}",
+            (10, info_y + 100),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            (255, 255, 255),
+            1,
+        )
         
         return frame
 
@@ -530,7 +654,7 @@ class DrowsinessSystem:
         self.logger.info("Sistema detenido correctamente")
 
 
-def main():
+def main() -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Sistema de Deteccion de Somnolencia")
@@ -550,6 +674,41 @@ def main():
         default="tesselation",
         choices=["tesselation", "contours", "none"],
         help="Overlay de malla facial: tesselation|contours|none (default: tesselation)",
+    )
+
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default=None,
+        help="Ruta a perfil JSON (calibracion por conductor) para cargar umbrales",
+    )
+
+    parser.add_argument("--head-pitch", type=float, default=20.0, help="Umbral pitch (grados)")
+    parser.add_argument("--head-yaw", type=float, default=20.0, help="Umbral yaw (grados)")
+    parser.add_argument("--head-roll", type=float, default=20.0, help="Umbral roll (grados)")
+    parser.add_argument(
+        "--head-tilt-min-s",
+        type=float,
+        default=0.7,
+        help="Tiempo minimo para HEAD_TILTED (segundos)",
+    )
+    parser.add_argument(
+        "--perclos-th",
+        type=float,
+        default=0.4,
+        help="Umbral de PERCLOS_HIGH (0..1)",
+    )
+    parser.add_argument(
+        "--risk-window-s",
+        type=float,
+        default=60.0,
+        help="Ventana (segundos) para agregacion de alertas",
+    )
+    parser.add_argument(
+        "--risk-score-th",
+        type=int,
+        default=6,
+        help="Score minimo en ventana para HIGH_RISK",
     )
 
     parser.add_argument(
@@ -574,6 +733,38 @@ def main():
 
     args = parser.parse_args()
 
+    # Load profile (optional) and override args defaults.
+    if args.profile:
+        with open(args.profile, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        prof = payload.get("profile", payload)
+        if "ear_threshold" in prof:
+            args.ear = float(prof["ear_threshold"])
+        if "mar_threshold" in prof:
+            args.mar = float(prof["mar_threshold"])
+        if "head_pitch_threshold" in prof:
+            args.head_pitch = float(prof["head_pitch_threshold"])
+        if "head_yaw_threshold" in prof:
+            args.head_yaw = float(prof["head_yaw_threshold"])
+        if "head_roll_threshold" in prof:
+            args.head_roll = float(prof["head_roll_threshold"])
+        if "head_tilt_min_duration_s" in prof:
+            args.head_tilt_min_s = float(prof["head_tilt_min_duration_s"])
+        if "perclos_threshold" in prof:
+            args.perclos_th = float(prof["perclos_threshold"])
+        if "alert_window_s" in prof:
+            args.risk_window_s = float(prof["alert_window_s"])
+        if "high_risk_score_threshold" in prof:
+            args.risk_score_th = int(prof["high_risk_score_threshold"])
+
+        print(
+            "Perfil cargado -> "
+            f"EAR:{args.ear:.3f} MAR:{args.mar:.3f} "
+            f"Head(P/Y/R):{args.head_pitch:.1f}/{args.head_yaw:.1f}/{args.head_roll:.1f} "
+            f"TiltMin:{args.head_tilt_min_s:.2f}s PERCLOS:{args.perclos_th:.2f} "
+            f"RiesgoVent:{args.risk_window_s:.0f}s Score:{args.risk_score_th}"
+        )
+
     system = DrowsinessSystem(
         camera_index=args.camera,
         video_path=args.video,
@@ -589,10 +780,17 @@ def main():
         log_category=args.log_category,
         driver=args.driver,
         log_tag=args.log_tag,
+        alert_window_s=args.risk_window_s,
+        high_risk_score_threshold=args.risk_score_th,
+        head_pitch_threshold=args.head_pitch,
+        head_yaw_threshold=args.head_yaw,
+        head_roll_threshold=args.head_roll,
+        head_tilt_min_duration_s=args.head_tilt_min_s,
+        perclos_threshold=args.perclos_th,
     )
 
-    system.run()
+    return system.run()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
