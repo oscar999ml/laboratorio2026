@@ -1,5 +1,6 @@
 import sys
 import os
+# main driver for somnolencia system
 
 # Only patch sys.path when running as a script (not as a module).
 if not __package__:
