@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+# eye tracking and EAR computation module
 
 
 class EyeTracker:
