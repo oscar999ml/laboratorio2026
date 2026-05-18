@@ -4,7 +4,6 @@ import threading
 import time
 import pygame
 import os
-# alarm system with sound and visual alerts
 
 
 class AlarmSystem:

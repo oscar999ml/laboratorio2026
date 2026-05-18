@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-# head pose estimation using mediapipe landmarks
 
 
 class HeadPoseDetector:
