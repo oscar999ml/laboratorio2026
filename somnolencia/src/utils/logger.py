@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import datetime
+# logger module for system event logging
 
 
 class Logger:
