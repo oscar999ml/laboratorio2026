@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Databases
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# Build / dist
+dist/
+build/
+*.tsbuildinfo
+
+# Backend OSM cache (auto-generated on startup)
+backend/data/*.osm
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+*.debug
+
+# Mobile/Expo
+.expo/
+*.jks
+*.keystore
+mobile/node_modules/
+mobile/androidviacrom/.gradle/
+mobile/androidviacrom/build/
+mobile/androidviacrom/local.properties
+mobile/androidviacrom/app/build/
+mobile/MyapplicationAndroidv1/

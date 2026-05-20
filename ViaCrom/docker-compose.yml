@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - JWT_SECRET=viacrom_production_secret_change_me
+      - DB_PATH=./db/database.sqlite
+      - UPLOAD_DIR=./uploads
+    volumes:
+      - backend-data:/app/db
+      - backend-uploads:/app/uploads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  backend-data:
+  backend-uploads:
